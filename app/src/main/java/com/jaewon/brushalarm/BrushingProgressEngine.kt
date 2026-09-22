@@ -27,3 +27,48 @@ class BrushingProgressEngine(
         lastValidTimestamp = timestampMillis
     }
 }
+
+/** Applies only known frame outcomes; dropped busy/throttled frames remain unknown. */
+class FrameProgressController(private val progress: BrushingProgressEngine) {
+    private var newestConclusiveTimestamp: Long? = null
+
+    /**
+     * Claims the capture timestamp before evaluating any stateful detection work. A callback that
+     * lost to a newer conclusive frame returns without invoking either lambda.
+     */
+    fun <T> onVerified(
+        timestampMillis: Long,
+        evaluate: () -> T,
+        isBrushing: (T) -> Boolean,
+        onAccepted: (T) -> Unit,
+    ): Boolean {
+        if (!tryAccept(timestampMillis)) return false
+        val result = evaluate()
+        progress.update(timestampMillis, isBrushing(result))
+        onAccepted(result)
+        return true
+    }
+
+    fun onFailure(timestampMillis: Long, onAccepted: () -> Unit): Boolean {
+        if (!tryAccept(timestampMillis)) return false
+        progress.update(timestampMillis, false)
+        onAccepted()
+        return true
+    }
+
+    fun onPreGateRejected(timestampMillis: Long): Boolean {
+        if (!tryAccept(timestampMillis)) return false
+        progress.update(timestampMillis, false)
+        return true
+    }
+
+    fun onUnverifiedFrame() = Unit
+
+    @Synchronized
+    private fun tryAccept(timestampMillis: Long): Boolean {
+        val newest = newestConclusiveTimestamp
+        if (newest != null && timestampMillis < newest) return false
+        newestConclusiveTimestamp = timestampMillis
+        return true
+    }
+}

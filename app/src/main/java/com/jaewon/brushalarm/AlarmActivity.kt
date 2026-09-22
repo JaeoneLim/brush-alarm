@@ -29,12 +29,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.face.Face
-import com.google.mlkit.vision.face.FaceDetection
-import com.google.mlkit.vision.face.FaceDetectorOptions
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.roundToInt
+
 
 class AlarmActivity : AppCompatActivity() {
     private lateinit var previewView: PreviewView
@@ -43,19 +38,17 @@ class AlarmActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
 
     private val handler = Handler(Looper.getMainLooper())
-    private val processing = AtomicBoolean(false)
-    private val progress = BrushingProgressEngine(requiredMillis = REQUIRED_MILLIS, maxFrameGapMillis = 1_000)
-    private val motion = LumaMotionDetector(threshold = 11.0)
+    private val progress = BrushingProgressEngine(requiredMillis = REQUIRED_MILLIS, maxFrameGapMillis = 500)
+    private val frameProgress = FrameProgressController(progress)
+    private val verifier = HybridBrushingVerifier()
+    private val lumaAnalyzer = LumaSignalAnalyzer()
+    private val inferenceGate = InferenceGate(minIntervalMillis = HEAVY_INFERENCE_INTERVAL_MILLIS)
+    private val warmUpState = WarmUpStateCoordinator()
+    private val frameLoopState = FrameLoopStateCoordinator()
+    private lateinit var meshProcessor: FaceMeshProcessor
     private var cameraProvider: ProcessCameraProvider? = null
     private var completed = false
-    private var previousFaceCenter: Pair<Float, Float>? = null
 
-    private val detector = FaceDetection.getClient(
-        FaceDetectorOptions.Builder()
-            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
-            .setMinFaceSize(0.25f)
-            .build()
-    )
 
     private val cameraPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -65,8 +58,11 @@ class AlarmActivity : AppCompatActivity() {
 
     private val frameLoop = object : Runnable {
         override fun run() {
-            if (!completed) analyzePreviewFrame()
-            handler.postDelayed(this, FRAME_INTERVAL_MILLIS)
+            if (!frameLoopState.running || completed) return
+            analyzePreviewFrame()
+            if (frameLoopState.running && !completed) {
+                handler.postDelayed(this, FRAME_INTERVAL_MILLIS)
+            }
         }
     }
 
@@ -80,12 +76,19 @@ class AlarmActivity : AppCompatActivity() {
         )
         hideSystemBars()
         setContentView(buildContent())
+        initializeFaceMesh()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 statusView.text = "양치 30초를 완료해야 종료할 수 있습니다."
             }
         })
         if (hasCameraPermission()) startCamera() else cameraPermission.launch(Manifest.permission.CAMERA)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (frameLoopState.onStart()) handler.post(frameLoop)
+        startFaceMeshWarmUp()
     }
 
     private fun buildContent(): FrameLayout {
@@ -143,80 +146,115 @@ class AlarmActivity : AppCompatActivity() {
             }
             provider.unbindAll()
             provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, preview)
-            statusView.text = "얼굴과 입 주변 칫솔 움직임을 확인합니다."
-            handler.removeCallbacks(frameLoop)
-            handler.post(frameLoop)
+            if (!warmUpState.modelReady) statusView.text = "얼굴 메시 모델 준비 중…"
+            if (frameLoopState.onCameraReady()) handler.post(frameLoop)
         }, ContextCompat.getMainExecutor(this))
     }
 
+    private fun initializeFaceMesh() {
+        meshProcessor = MlKitFaceMeshProcessor(this)
+    }
+
+    private fun startFaceMeshWarmUp() {
+        val attempt = warmUpState.onStart() ?: return
+        statusView.text = "얼굴 메시 모델 준비 중…"
+        meshProcessor.warmUp(
+            onReady = {
+                if (warmUpState.onReady(attempt)) {
+                    statusView.text = "준비 완료—얼굴과 입 주변을 카메라에 보여주세요."
+                }
+            },
+            onFailure = {
+                if (warmUpState.onFailure(attempt)) {
+                    statusView.text = "얼굴 메시 모델을 준비하지 못했습니다."
+                }
+            },
+        )
+    }
+
     private fun analyzePreviewFrame() {
-        if (!processing.compareAndSet(false, true)) return
+        if (!warmUpState.modelReady) return
         val source = previewView.bitmap
-        if (source == null || source.width == 0 || source.height == 0) {
-            processing.set(false)
-            return
-        }
-        val width = 320
-        val height = (source.height * width.toFloat() / source.width).roundToInt().coerceAtLeast(1)
+        if (source == null || source.width == 0 || source.height == 0) return
+        val inputSize = FaceMeshInputSize.forSource(source.width, source.height)
+        val width = inputSize.width
+        val height = inputSize.height
         val bitmap = Bitmap.createScaledBitmap(source, width, height, true)
-        detector.process(InputImage.fromBitmap(bitmap, 0))
-            .addOnSuccessListener { faces -> processDetection(bitmap, faces) }
-            .addOnFailureListener {
-                progress.update(SystemClock.elapsedRealtime(), false)
-                statusView.text = "카메라 분석 오류—다시 비춰주세요."
-            }
-            .addOnCompleteListener {
-                bitmap.recycle()
-                processing.set(false)
-            }
-    }
-
-    private fun processDetection(bitmap: Bitmap, faces: List<Face>) {
-        val face = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }
-        if (face == null) {
-            previousFaceCenter = null
-            progress.update(SystemClock.elapsedRealtime(), false)
-            renderProgress(false, "얼굴이 보이지 않습니다.")
+        val luma = bitmap.toLuma()
+        val timestamp = SystemClock.elapsedRealtime()
+        if (!lumaAnalyzer.passesPreGate(luma, width, height)) {
+            frameProgress.onPreGateRejected(timestamp)
+            bitmap.recycle()
             return
         }
-
-        val box = face.boundingBox
-        val center = box.exactCenterX() to box.exactCenterY()
-        val oldCenter = previousFaceCenter
-        previousFaceCenter = center
-        val stable = oldCenter == null || (
-            kotlin.math.abs(center.first - oldCenter.first) < bitmap.width * 0.09f &&
-                kotlin.math.abs(center.second - oldCenter.second) < bitmap.height * 0.09f
-            )
-
-        val left = (box.left + box.width() * 0.18f).roundToInt()
-        val right = (box.right - box.width() * 0.18f).roundToInt()
-        val top = (box.top + box.height() * 0.52f).roundToInt()
-        val bottom = (box.top + box.height() * 0.88f).roundToInt()
-        val luma = bitmap.toLuma()
-        val brushing = stable && motion.detect(
-            luma,
-            bitmap.width,
-            bitmap.height,
-            left,
-            top,
-            right,
-            bottom,
+        if (!inferenceGate.tryAcquire(timestamp)) {
+            frameProgress.onUnverifiedFrame()
+            bitmap.recycle()
+            return
+        }
+        meshProcessor.process(
+            bitmap = bitmap,
+            onResult = { mesh ->
+                frameProgress.onVerified(
+                    timestampMillis = timestamp,
+                    evaluate = { evaluateDetection(luma, width, height, timestamp, mesh) },
+                    isBrushing = { it.brushing },
+                    onAccepted = { result ->
+                        renderProgress(result)
+                        if (progress.isComplete) completeAlarm()
+                    },
+                )
+            },
+            onFailure = {
+                frameProgress.onFailure(timestamp) {
+                    renderProgress(VerificationResult(VerificationState.ANALYSIS_ERROR, false, 0))
+                }
+            },
+            onComplete = {
+                bitmap.recycle()
+                inferenceGate.release()
+            },
         )
-        progress.update(SystemClock.elapsedRealtime(), brushing)
-        renderProgress(
-            brushing,
-            if (brushing) "양치 동작 감지 중 ✓" else "입 주변에서 칫솔을 움직여 주세요.",
-        )
-        if (progress.isComplete) completeAlarm()
     }
 
-    private fun renderProgress(active: Boolean, message: String) {
+    private fun evaluateDetection(
+        luma: ByteArray,
+        width: Int,
+        height: Int,
+        timestamp: Long,
+        mesh: MeshObservation?,
+    ): VerificationResult {
+        return if (mesh == null || mesh.mouthLandmarks.isEmpty()) {
+            verifier.update(BrushingSignal(timestamp, null, 0.0, 0.0, 0.5))
+        } else {
+            val analysis = lumaAnalyzer.analyze(luma, width, height, mesh)
+            verifier.update(
+                BrushingSignal(
+                    timestampMillis = timestamp,
+                    face = analysis.face,
+                    localLumaDelta = analysis.localLumaDelta,
+                    globalLumaDelta = analysis.globalLumaDelta,
+                    mouthMotionX = analysis.mouthMotionX,
+                ),
+            )
+        }
+    }
+
+    private fun renderProgress(result: VerificationResult) {
         val seconds = progress.accumulatedMillis / 1000.0
         timerView.text = "%.1f / 30.0초".format(seconds)
         progressBar.progress = progress.accumulatedMillis.toInt()
-        statusView.text = message
-        statusView.setTextColor(if (active) Color.rgb(105, 240, 174) else Color.WHITE)
+        statusView.text = when (result.state) {
+            VerificationState.WARMING_UP -> "얼굴 메시 모델 준비 중…"
+            VerificationState.NO_FACE -> "얼굴과 입이 보이도록 카메라를 맞춰주세요."
+            VerificationState.HOLD_STILL -> "카메라와 머리를 안정적으로 유지해주세요."
+            VerificationState.LIGHTING_CHANGE -> "조명 변화가 아닌 입 주변 동작이 필요합니다."
+            VerificationState.MOVE_AT_MOUTH -> "입 주변에서 칫솔을 좌우로 움직여 주세요."
+            VerificationState.SEEKING_CADENCE -> "반복 양치 리듬 확인 중 (${result.reversalCount}/3)"
+            VerificationState.BRUSHING -> "반복 양치 동작 감지 중 ✓"
+            VerificationState.ANALYSIS_ERROR -> "카메라 분석 오류—다시 비춰주세요."
+        }
+        statusView.setTextColor(if (result.brushing) Color.rgb(105, 240, 174) else Color.WHITE)
     }
 
     private fun completeAlarm() {
@@ -272,15 +310,23 @@ class AlarmActivity : AppCompatActivity() {
         return super.dispatchKeyEvent(event)
     }
 
+    override fun onStop() {
+        frameLoopState.onStop()
+        handler.removeCallbacks(frameLoop)
+        warmUpState.onStop()
+        super.onStop()
+    }
+
     override fun onDestroy() {
         handler.removeCallbacks(frameLoop)
         cameraProvider?.unbindAll()
-        detector.close()
+        if (::meshProcessor.isInitialized) meshProcessor.close()
         super.onDestroy()
     }
 
     companion object {
         private const val REQUIRED_MILLIS = 30_000L
-        private const val FRAME_INTERVAL_MILLIS = 250L
+        private const val FRAME_INTERVAL_MILLIS = 125L
+        private const val HEAVY_INFERENCE_INTERVAL_MILLIS = 250L
     }
 }

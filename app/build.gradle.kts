@@ -11,8 +11,8 @@ android {
         applicationId = "com.jaewon.brushalarm"
         minSdk = 31
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.2.0"
         ndk { abiFilters += "arm64-v8a" }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -61,7 +61,36 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.4.1")
     implementation("androidx.camera:camera-lifecycle:1.4.1")
     implementation("androidx.camera:camera-view:1.4.1")
-    implementation("com.google.android.gms:play-services-mlkit-face-detection:17.1.0")
+    implementation("com.google.mlkit:face-mesh-detection:16.0.0-beta3")
 
     testImplementation("junit:junit:4.13.2")
+}
+
+val verifyNoNetworkPermissions by tasks.registering {
+    group = "verification"
+    description = "Fails if debug or release merged manifests grant network permissions."
+    dependsOn("processDebugMainManifest", "processReleaseMainManifest")
+
+    doLast {
+        listOf("debug", "release").forEach { variant ->
+            val taskName = "process${variant.replaceFirstChar(Char::uppercaseChar)}MainManifest"
+            val manifest = layout.buildDirectory.file(
+                "intermediates/merged_manifest/$variant/$taskName/AndroidManifest.xml",
+            ).get().asFile
+            check(manifest.isFile) { "Missing merged $variant manifest: $manifest" }
+            val contents = manifest.readText()
+            listOf(
+                "android.permission.INTERNET",
+                "android.permission.ACCESS_NETWORK_STATE",
+            ).forEach { permission ->
+                check(permission !in contents) {
+                    "$permission is present in the merged $variant manifest"
+                }
+            }
+        }
+    }
+}
+
+tasks.named("check") {
+    dependsOn(verifyNoNetworkPermissions)
 }
