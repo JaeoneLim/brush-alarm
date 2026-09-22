@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.BrushAlarm" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="colorPrimary">#1B5E20</item>
+        <item name="colorPrimaryVariant">#0D3B12</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+    </style>
+</resources>
