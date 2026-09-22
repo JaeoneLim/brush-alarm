@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
@@ -265,6 +266,11 @@ class AlarmActivity : AppCompatActivity() {
         this,
         Manifest.permission.CAMERA,
     ) == PackageManager.PERMISSION_GRANTED
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!completed && shouldBlockAlarmKey(event.keyCode)) return true
+        return super.dispatchKeyEvent(event)
+    }
 
     override fun onDestroy() {
         handler.removeCallbacks(frameLoop)
