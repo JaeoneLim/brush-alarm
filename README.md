@@ -8,7 +8,7 @@ Camera frames are processed on-device and are not recorded, saved, or uploaded.
 
 ## Important limitation
 
-A normal consumer Android app cannot prevent OS-level Force stop, uninstall, reboot, or permission revocation. This app blocks in-app back navigation, uses a full-screen alarm, keeps the screen awake, and runs ringing audio as an ongoing foreground service.
+A normal consumer Android app cannot prevent OS-level Force stop, uninstall, reboot, or permission revocation. This app blocks in-app back navigation, uses a full-screen alarm, keeps the screen awake, forces the alarm audio stream back to maximum while ringing, and restores its previous level after successful brushing.
 
 ## Build
 

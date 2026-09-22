@@ -8,9 +8,12 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -19,10 +22,31 @@ import androidx.core.app.NotificationCompat
 class AlarmRingingService : Service() {
     private var player: MediaPlayer? = null
     private var vibrator: Vibrator? = null
+    private val volumeHandler = Handler(Looper.getMainLooper())
+    private lateinit var volumeEnforcer: AlarmVolumeEnforcer
+    private val volumeLoop = object : Runnable {
+        override fun run() {
+            volumeEnforcer.enforce()
+            volumeHandler.postDelayed(this, 250)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         createChannel(this)
+        val audioManager = getSystemService(AudioManager::class.java)
+        volumeEnforcer = AlarmVolumeEnforcer(object : AlarmVolumePort {
+            override val current: Int
+                get() = audioManager.getStreamVolume(AudioManager.STREAM_ALARM)
+            override val maximum: Int
+                get() = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+
+            override fun setVolume(value: Int) {
+                audioManager.setStreamVolume(AudioManager.STREAM_ALARM, value, 0)
+            }
+        })
+        volumeEnforcer.start()
+        volumeHandler.post(volumeLoop)
         startForeground(NOTIFICATION_ID, buildNotification())
         startSoundAndVibration()
     }
@@ -81,6 +105,8 @@ class AlarmRingingService : Service() {
     }
 
     override fun onDestroy() {
+        volumeHandler.removeCallbacks(volumeLoop)
+        if (::volumeEnforcer.isInitialized) volumeEnforcer.stop()
         player?.stop()
         player?.release()
         vibrator?.cancel()
