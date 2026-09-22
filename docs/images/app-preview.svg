@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="780" viewBox="0 0 1400 780" role="img" aria-labelledby="title desc">
+  <title id="title">Brush Alarm app preview</title>
+  <desc id="desc">Schedule screen, live brushing verification screen, and the three-step alarm flow.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071a12"/><stop offset="1" stop-color="#10281d"/></linearGradient>
+    <linearGradient id="cam" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#304f45"/><stop offset="1" stop-color="#101a17"/></linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000" flood-opacity=".35"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#7ce8a5"/></marker>
+  </defs>
+  <rect width="1400" height="780" rx="28" fill="url(#bg)"/>
+  <circle cx="1250" cy="85" r="170" fill="#1f8f52" opacity=".11"/><circle cx="100" cy="720" r="230" fill="#42d77d" opacity=".06"/>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+    <text x="70" y="78" fill="#fff" font-size="34" font-weight="800">Brush Alarm</text>
+    <text x="70" y="112" fill="#a8c9b4" font-size="17">알람을 끄려면 카메라 앞에서 30초 동안 양치하세요.</text>
+
+    <!-- Schedule phone -->
+    <g filter="url(#shadow)">
+      <rect x="70" y="150" width="330" height="560" rx="42" fill="#0b0f0d" stroke="#395247" stroke-width="3"/>
+      <rect x="84" y="166" width="302" height="528" rx="31" fill="#f5f8f6"/>
+      <rect x="181" y="177" width="108" height="22" rx="11" fill="#111"/>
+      <text x="235" y="242" text-anchor="middle" fill="#133c27" font-size="27" font-weight="800">양치 알람</text>
+      <text x="235" y="278" text-anchor="middle" fill="#527061" font-size="13">양치 동작 30초 후에만 종료됩니다</text>
+      <rect x="112" y="306" width="246" height="132" rx="18" fill="#fff" stroke="#d9e4dc"/>
+      <text x="235" y="338" text-anchor="middle" fill="#537061" font-size="13" font-weight="700">알람 시간</text>
+      <text x="235" y="392" text-anchor="middle" fill="#13251b" font-size="47" font-weight="700">07:00</text>
+      <rect x="112" y="462" width="246" height="54" rx="15" fill="#19743e"/>
+      <text x="235" y="496" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">이 시간으로 알람 설정</text>
+      <rect x="112" y="531" width="246" height="54" rx="15" fill="#e5f4ea" stroke="#77b68e"/>
+      <text x="235" y="565" text-anchor="middle" fill="#155d34" font-size="16" font-weight="700">지금 알람 테스트</text>
+      <text x="235" y="624" text-anchor="middle" fill="#26814b" font-size="13" font-weight="700">카메라 ✓ · 정확한 알람 ✓</text>
+      <text x="235" y="651" text-anchor="middle" fill="#799185" font-size="12">전체 화면 알람 ✓</text>
+    </g>
+    <rect x="119" y="724" width="232" height="36" rx="18" fill="#153827"/><text x="235" y="748" text-anchor="middle" fill="#b8e9ca" font-size="14" font-weight="700">1 · 시간 및 권한 설정</text>
+
+    <!-- Arrow -->
+    <path d="M435 430 C470 430 485 430 515 430" fill="none" stroke="#7ce8a5" stroke-width="4" marker-end="url(#arrow)"/>
+
+    <!-- Active phone -->
+    <g filter="url(#shadow)">
+      <rect x="540" y="150" width="330" height="560" rx="42" fill="#0b0f0d" stroke="#395247" stroke-width="3"/>
+      <rect x="554" y="166" width="302" height="528" rx="31" fill="url(#cam)"/>
+      <rect x="651" y="177" width="108" height="22" rx="11" fill="#111"/>
+      <text x="705" y="244" text-anchor="middle" fill="#fff" font-size="23" font-weight="900">양치 동작을 보여주세요</text>
+      <!-- abstract camera portrait -->
+      <circle cx="705" cy="355" r="74" fill="#c59b7b"/>
+      <path d="M630 342 C642 259 768 259 780 342 C748 312 664 312 630 342Z" fill="#252c29"/>
+      <circle cx="677" cy="355" r="5" fill="#34241d"/><circle cx="734" cy="355" r="5" fill="#34241d"/>
+      <path d="M684 395 Q705 406 726 395" fill="none" stroke="#7e4438" stroke-width="5" stroke-linecap="round"/>
+      <!-- toothbrush -->
+      <g transform="rotate(-23 760 430)"><rect x="736" y="390" width="14" height="133" rx="7" fill="#d7fff0"/><rect x="729" y="382" width="28" height="22" rx="5" fill="#60e599"/><path d="M733 384v13M740 384v13M747 384v13M754 384v13" stroke="#fff" stroke-width="3"/></g>
+      <rect x="584" y="496" width="242" height="16" rx="8" fill="#2d493b"/>
+      <rect x="584" y="496" width="145" height="16" rx="8" fill="#60e599"/>
+      <text x="705" y="554" text-anchor="middle" fill="#fff" font-size="34" font-weight="800">18.2 / 30.0초</text>
+      <text x="705" y="591" text-anchor="middle" fill="#83f4ac" font-size="15" font-weight="700">양치 동작 감지 중 ✓</text>
+      <text x="705" y="634" text-anchor="middle" fill="#d1ddd6" font-size="12">영상은 저장하거나 업로드하지 않습니다</text>
+    </g>
+    <rect x="589" y="724" width="232" height="36" rx="18" fill="#153827"/><text x="705" y="748" text-anchor="middle" fill="#b8e9ca" font-size="14" font-weight="700">2 · 실시간 양치 판별</text>
+
+    <!-- Flow panel -->
+    <g transform="translate(930 156)">
+      <rect width="400" height="548" rx="28" fill="#0d2117" stroke="#315841" stroke-width="2"/>
+      <text x="38" y="58" fill="#fff" font-size="25" font-weight="800">동작 방식</text>
+      <g transform="translate(38 95)">
+        <circle cx="27" cy="27" r="27" fill="#1e7342"/><text x="27" y="35" text-anchor="middle" fill="#fff" font-size="22" font-weight="800">1</text>
+        <text x="75" y="20" fill="#fff" font-size="17" font-weight="700">정확한 시각에 알람</text>
+        <text x="75" y="45" fill="#91ad9c" font-size="13">전체 화면 · 반복음 · 진동</text>
+        <path d="M27 63 V108" stroke="#4f8c68" stroke-width="3" stroke-dasharray="5 6"/>
+      </g>
+      <g transform="translate(38 208)">
+        <circle cx="27" cy="27" r="27" fill="#1e7342"/><text x="27" y="35" text-anchor="middle" fill="#fff" font-size="22" font-weight="800">2</text>
+        <text x="75" y="20" fill="#fff" font-size="17" font-weight="700">전면 카메라 분석</text>
+        <text x="75" y="45" fill="#91ad9c" font-size="13">얼굴 + 입 주변 움직임</text>
+        <path d="M27 63 V108" stroke="#4f8c68" stroke-width="3" stroke-dasharray="5 6"/>
+      </g>
+      <g transform="translate(38 321)">
+        <circle cx="27" cy="27" r="27" fill="#1e7342"/><text x="27" y="35" text-anchor="middle" fill="#fff" font-size="22" font-weight="800">3</text>
+        <text x="75" y="20" fill="#fff" font-size="17" font-weight="700">30초 누적 후 종료</text>
+        <text x="75" y="45" fill="#91ad9c" font-size="13">감지가 끊기면 시간도 멈춤</text>
+      </g>
+      <rect x="38" y="420" width="324" height="88" rx="16" fill="#132f20" stroke="#29784a"/>
+      <text x="60" y="452" fill="#79eca3" font-size="14" font-weight="800">PRIVACY FIRST</text>
+      <text x="60" y="479" fill="#c7d8ce" font-size="13">모든 영상 분석은 기기 내부에서 수행</text>
+      <text x="60" y="499" fill="#80998a" font-size="12">녹화 · 저장 · 서버 전송 없음</text>
+    </g>
+  </g>
+</svg>
