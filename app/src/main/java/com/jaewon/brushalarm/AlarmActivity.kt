@@ -31,7 +31,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
 
-class AlarmActivity : AppCompatActivity() {
+open class AlarmActivity : AppCompatActivity() {
+    private val mode: AlarmScreenMode
+        get() = if (this is PreviewActivity) AlarmScreenMode.PREVIEW else AlarmScreenMode.ALARM
     private lateinit var previewView: PreviewView
     private lateinit var statusView: TextView
     private lateinit var timerView: TextView
@@ -47,6 +49,7 @@ class AlarmActivity : AppCompatActivity() {
     private val frameLoopState = FrameLoopStateCoordinator()
     private lateinit var meshProcessor: FaceMeshProcessor
     private var cameraProvider: ProcessCameraProvider? = null
+    private var previewUseCase: Preview? = null
     private var completed = false
 
 
@@ -68,25 +71,30 @@ class AlarmActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setShowWhenLocked(true)
-        setTurnScreenOn(true)
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD,
-        )
-        hideSystemBars()
+        if (mode.wakeAndUnlockScreen) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD,
+            )
+            hideSystemBars()
+        }
         setContentView(buildContent())
-        initializeFaceMesh()
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                statusView.text = "양치 30초를 완료해야 종료할 수 있습니다."
-            }
-        })
+        if (mode.runBrushingVerification) initializeFaceMesh()
+        if (mode.blockDismissal) {
+            onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    statusView.text = "양치 30초를 완료해야 종료할 수 있습니다."
+                }
+            })
+        }
         if (hasCameraPermission()) startCamera() else cameraPermission.launch(Manifest.permission.CAMERA)
     }
 
     override fun onStart() {
         super.onStart()
+        if (!mode.runBrushingVerification) return
         if (frameLoopState.onStart()) handler.post(frameLoop)
         startFaceMeshWarmUp()
     }
@@ -106,13 +114,13 @@ class AlarmActivity : AppCompatActivity() {
             setBackgroundColor(Color.argb(80, 0, 0, 0))
         }
         overlay.addView(TextView(this).apply {
-            text = "양치 동작을 보여주세요"
+            text = if (mode.showExitButton) "알람 화면 미리보기" else "양치 동작을 보여주세요"
             textSize = 26f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
         }, LinearLayout.LayoutParams(-1, -2))
         timerView = TextView(this).apply {
-            text = "0.0 / 30.0초"
+            text = if (mode.showExitButton) "0.0 / 30.0초 · 미리보기" else "0.0 / 30.0초"
             textSize = 34f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
@@ -125,13 +133,20 @@ class AlarmActivity : AppCompatActivity() {
         }
         overlay.addView(progressBar, LinearLayout.LayoutParams(-1, 28))
         statusView = TextView(this).apply {
-            text = "전면 카메라 준비 중…"
+            text = if (mode.showExitButton) "전면 카메라 화면만 보여줍니다. 양치 없이 닫을 수 있습니다."
+                else "전면 카메라 준비 중…"
             textSize = 17f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             setPadding(0, 16, 0, 0)
         }
         overlay.addView(statusView, LinearLayout.LayoutParams(-1, -2))
+        if (mode.showExitButton) {
+            overlay.addView(Button(this).apply {
+                text = "미리보기 종료"
+                setOnClickListener { finish() }
+            }, LinearLayout.LayoutParams(-1, -2))
+        }
         root.addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
         return root
     }
@@ -139,15 +154,19 @@ class AlarmActivity : AppCompatActivity() {
     private fun startCamera() {
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
+            if (isFinishing || isDestroyed) return@addListener
             val provider = future.get()
             cameraProvider = provider
             val preview = Preview.Builder().build().also {
                 it.surfaceProvider = previewView.surfaceProvider
             }
-            provider.unbindAll()
+            if (mode.runBrushingVerification) provider.unbindAll()
             provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, preview)
-            if (!warmUpState.modelReady) statusView.text = "얼굴 메시 모델 준비 중…"
-            if (frameLoopState.onCameraReady()) handler.post(frameLoop)
+            previewUseCase = preview
+            if (mode.runBrushingVerification) {
+                if (!warmUpState.modelReady) statusView.text = "얼굴 메시 모델 준비 중…"
+                if (frameLoopState.onCameraReady()) handler.post(frameLoop)
+            }
         }, ContextCompat.getMainExecutor(this))
     }
 
@@ -258,6 +277,7 @@ class AlarmActivity : AppCompatActivity() {
     }
 
     private fun completeAlarm() {
+        if (!mode.stopRingingOnCompletion) return
         if (completed) return
         completed = true
         statusView.text = "완료! 알람을 종료합니다."
@@ -284,7 +304,8 @@ class AlarmActivity : AppCompatActivity() {
     }
 
     private fun showPermissionRequired() {
-        statusView.text = "카메라 권한 없이는 양치를 확인할 수 없습니다."
+        statusView.text = if (mode.showExitButton) "화면 미리보기에 카메라 권한이 필요합니다. 바로 닫을 수도 있습니다."
+            else "카메라 권한 없이는 양치를 확인할 수 없습니다."
         val button = Button(this).apply {
             text = "카메라 권한 허용"
             setOnClickListener { cameraPermission.launch(Manifest.permission.CAMERA) }
@@ -306,7 +327,7 @@ class AlarmActivity : AppCompatActivity() {
     ) == PackageManager.PERMISSION_GRANTED
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (!completed && shouldBlockAlarmKey(event.keyCode)) return true
+        if (mode.blockDismissal && !completed && shouldBlockAlarmKey(event.keyCode)) return true
         return super.dispatchKeyEvent(event)
     }
 
@@ -319,7 +340,8 @@ class AlarmActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         handler.removeCallbacks(frameLoop)
-        cameraProvider?.unbindAll()
+        if (mode.runBrushingVerification) cameraProvider?.unbindAll()
+        else previewUseCase?.let { previewUseCase -> cameraProvider?.unbind(previewUseCase) }
         if (::meshProcessor.isInitialized) meshProcessor.close()
         super.onDestroy()
     }
