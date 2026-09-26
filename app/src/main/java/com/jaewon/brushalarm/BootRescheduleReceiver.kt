@@ -7,7 +7,10 @@ import android.content.Intent
 class BootRescheduleReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action in RESCHEDULE_ACTIONS) {
-            RecurringAlarmScheduler.rescheduleStored(context)
+            val store = MultiAlarmStore(context)
+            val migrated = store.migrationDone()
+            if (legacyNeedsBootReschedule(migrated)) RecurringAlarmScheduler.rescheduleStored(context)
+            MultiAlarmScheduler.rescheduleAll(context, force = true)
         }
     }
 
