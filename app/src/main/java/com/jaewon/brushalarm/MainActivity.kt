@@ -102,6 +102,10 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener { triggerTestAlarm() }
             }, matchWidth())
             addView(Button(context).apply {
+                text = "알람 화면 미리보기 (소리 없이 바로 닫기)"
+                setOnClickListener { openScreenPreview() }
+            }, matchWidth())
+            addView(Button(context).apply {
                 text = "필수 시스템 권한 확인"
                 setOnClickListener { openMissingSystemPermission() }
             }, matchWidth())
@@ -232,6 +236,10 @@ class MainActivity : AppCompatActivity() {
         }
         ContextCompat.startForegroundService(this, Intent(this, AlarmRingingService::class.java))
         startActivity(Intent(this, AlarmActivity::class.java))
+    }
+
+    private fun openScreenPreview() {
+        startActivity(Intent(this, PreviewActivity::class.java))
     }
 
     private fun requestRuntimePermissions() {
