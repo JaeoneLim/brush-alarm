@@ -45,10 +45,6 @@ class AlarmRingingService : Service() {
                 audioManager.setStreamVolume(AudioManager.STREAM_ALARM, value, 0)
             }
         })
-        volumeEnforcer.start()
-        volumeHandler.post(volumeLoop)
-        startForeground(NOTIFICATION_ID, buildNotification())
-        startSoundAndVibration()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -56,7 +52,37 @@ class AlarmRingingService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (intent == null) {
+            ensureRingingStarted()
+            return START_STICKY
+        }
+        val multi = intent.hasExtra(MultiAlarmScheduler.EXTRA_ALARM_ID) ||
+            intent.hasExtra(MultiAlarmScheduler.EXTRA_SCHEDULED_AT)
+        if (multi) {
+            val id = intent.getIntExtra(MultiAlarmScheduler.EXTRA_ALARM_ID, -1)
+            val at = intent.getLongExtra(MultiAlarmScheduler.EXTRA_SCHEDULED_AT, Long.MIN_VALUE)
+            synchronized(multiAlarmStoreLock) {
+                if (id < 1 || !MultiAlarmScheduler.isPending(this, id, at)) {
+                    // A duplicate queued start may arrive after ACK. Do not let its
+                    // return value turn an already audible START_STICKY service non-sticky.
+                    if (player != null) return START_STICKY
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
+                ensureRingingStarted()
+                // ACK is intentionally later than foreground registration and MediaPlayer.start().
+                MultiAlarmScheduler.acknowledgeRinging(this, id, at)
+            }
+        } else ensureRingingStarted() // Independent Test alarm and pre-migration delivery.
         return START_STICKY
+    }
+
+    private fun ensureRingingStarted() {
+        if (player != null) return
+        volumeEnforcer.start()
+        volumeHandler.post(volumeLoop)
+        startForeground(NOTIFICATION_ID, buildNotification())
+        startSoundAndVibration()
     }
 
     private fun buildNotification(): Notification {
