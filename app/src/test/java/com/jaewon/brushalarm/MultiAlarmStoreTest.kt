@@ -58,6 +58,6 @@ class MultiAlarmStoreTest {
     @Test fun codecRefusesCorruptOrInvalidEntries() {
         assertNull(decodeAlarmEntry("garbage"))
         assertNull(decodeAlarmEntry("4|24|10|SATURDAY||true|"))
-        assertNull(decodeAlarmEntry("4|9|10||2026-10-05|true|"))
+        assertNull(decodeAlarmEntry("4|9|10|MONDAY|2026-10-05|true|"))
     }
 }

@@ -21,10 +21,19 @@ data class AlarmEntry(
         require(if (date == null) weekdays.isNotEmpty() || !enabled else weekdays.isEmpty()) {
             "Choose weekdays before enabling a repeating alarm, or one date"
         }
-        require(date == null || date.dayOfWeek in setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)) {
-            "One-off alarms must be on a weekend"
-        }
     }
+}
+
+fun oneOffDateForToday(
+    nowMillis: Long,
+    hour: Int,
+    minute: Int,
+    zone: ZoneId = ZoneId.systemDefault(),
+): LocalDate? {
+    require(hour in 0..23 && minute in 0..59)
+    val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
+    val trigger = today.atTime(hour, minute).atZone(zone).toInstant().toEpochMilli()
+    return today.takeIf { trigger > nowMillis }
 }
 
 fun canEnableOneOff(entry: AlarmEntry, nowMillis: Long,

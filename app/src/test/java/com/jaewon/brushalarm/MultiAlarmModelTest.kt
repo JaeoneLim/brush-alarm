@@ -16,17 +16,54 @@ class MultiAlarmModelTest {
         assertEquals(epoch("2026-10-10", 9, 30), nextTriggerMillis(entry(), epoch("2026-10-03", 9, 30), zone))
     }
 
+    @Test fun weekdayOneOffOnStoredDateIsValidAndDoesNotRecur() {
+        val alarm = entry(emptySet(), LocalDate.parse("2026-10-05"))
+        alarm.validate()
+        assertEquals(epoch("2026-10-05", 9, 30), nextTriggerMillis(alarm, epoch("2026-10-05", 8), zone))
+        assertNull(nextTriggerMillis(alarm, epoch("2026-10-05", 9, 30), zone))
+    }
+
     @Test fun dateOneOffNeverRollsForwardAfterItsDate() {
         val alarm = entry(emptySet(), LocalDate.parse("2026-10-03"))
         assertEquals(epoch("2026-10-03", 9, 30), nextTriggerMillis(alarm, epoch("2026-10-02"), zone))
         assertNull(nextTriggerMillis(alarm, epoch("2026-10-03", 9, 30), zone))
     }
 
-    @Test fun rejectsNonWeekendDatesAndInvalidScheduleShapes() {
-        assertThrows(IllegalArgumentException::class.java) { entry(emptySet(), LocalDate.parse("2026-10-05")).validate() }
+    @Test fun rejectsInvalidScheduleShapes() {
         assertThrows(IllegalArgumentException::class.java) { entry(emptySet(), enabled = true).validate() }
         assertThrows(IllegalArgumentException::class.java) { entry(date = LocalDate.parse("2026-10-03")).validate() }
         assertThrows(IllegalArgumentException::class.java) { entry().copy(hour = 24).validate() }
+    }
+
+    @Test fun newOneOffUsesCurrentWeekdayWhenTimeIsStillFuture() {
+        val now = epoch("2026-10-05", 8) // Monday
+        val chosen = oneOffDateForToday(now, 9, 30, zone)
+        assertEquals(LocalDate.parse("2026-10-05"), chosen)
+        val alarm = entry(emptySet(), chosen)
+        assertEquals(epoch("2026-10-05", 9, 30), nextTriggerMillis(alarm, now, zone))
+    }
+
+    @Test fun newOneOffRejectsPassedOrExactTimeInsteadOfRollingToTomorrow() {
+        assertNull(oneOffDateForToday(epoch("2026-10-05", 9, 30), 9, 30, zone))
+        assertNull(oneOffDateForToday(epoch("2026-10-05", 9, 31), 9, 30, zone))
+        assertNull(oneOffDateForToday(epoch("2026-10-05", 23, 59), 0, 0, zone))
+    }
+
+    @Test fun newOneOffNearMidnightUsesTodaysRemainingMinutes() {
+        assertEquals(LocalDate.parse("2026-10-05"),
+            oneOffDateForToday(epoch("2026-10-05", 23, 58), 23, 59, zone))
+        assertEquals(LocalDate.parse("2026-10-06"),
+            oneOffDateForToday(epoch("2026-10-06", 0), 0, 1, zone))
+    }
+
+    @Test fun newOneOffUsesProvidedLocalZoneRatherThanUtcDate() {
+        val now = epoch("2026-10-05", 0, 15)
+        val losAngeles = ZoneId.of("America/Los_Angeles") // Sunday, October 4 at 17:15
+        assertEquals(LocalDate.parse("2026-10-04"),
+            oneOffDateForToday(now, 18, 0, losAngeles))
+        assertEquals(LocalDate.parse("2026-10-05"),
+            oneOffDateForToday(now, 9, 30, zone))
+        assertNull(oneOffDateForToday(now, 17, 0, losAngeles))
     }
 
     @Test fun expiredOneOffCannotBeReenabled() {
