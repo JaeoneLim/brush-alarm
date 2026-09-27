@@ -13,12 +13,36 @@ class AlarmListUiContractTest {
         assertTrue(source.contains("menu.add(\"삭제\").setOnMenuItemClickListener { deleteAlarm(entry); true }"))
         assertTrue(source.contains("date?.let"))
     }
-    @Test fun addOffersRepeatAndDatedWeekendModes() {
-        assertTrue(source.contains("반복 알람 추가"))
-        assertTrue(source.contains("주말 1회성 알람 추가"))
-        assertTrue(source.contains("DatePickerDialog"))
-        assertTrue(source.contains("TimePickerDialog"))
-        assertTrue(source.contains("dayOfWeek !in setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)"))
+    @Test fun addUsesSinglePickerWithOptionalRepeatDaysAndTodayOnlyForOneOff() {
+        val content = source.substringAfter("private fun buildContent()").substringBefore("private fun refreshList(")
+        assertTrue(content.contains("setOnClickListener { chooseTime(null) }"))
+        assertFalse(source.contains("showAddMenu("))
+        assertFalse(source.contains("DatePickerDialog"))
+        val dayPicker = source.substringAfter("private fun chooseWeekdays(").substringBefore("private fun saveAlarm(")
+        assertTrue(dayPicker.contains("if (weekdays.isEmpty())"))
+        assertTrue(dayPicker.contains("oneOffDateForToday("))
+        assertTrue(dayPicker.contains("saveAlarm(entry, hour, minute, weekdays, null)"))
+    }
+    @Test fun listHasNoFakeBottomAlarmTabOrOversizedSpacer() {
+        val content = source.substringAfter("private fun buildContent()").substringBefore("private fun refreshList(")
+        assertFalse(content.contains("◉  알람"))
+        assertFalse(content.contains("dp(110)"))
+        assertTrue(content.contains("return ScrollView(this).apply"))
+        val row = source.substringAfter("private fun alarmRow(").substringBefore("private fun weekdayStrip(")
+        assertTrue(row.contains("val lower = LinearLayout(this)"))
+        assertTrue(row.contains("lower.addView(Button(this)"))
+    }
+    @Test fun compactRowKeepsAccessibleTouchTargets() {
+        val row = source.substringAfter("private fun alarmRow(").substringBefore("private fun showRowActions(")
+        assertTrue(row.contains("LinearLayout.LayoutParams(dp(48), dp(48))"))
+        assertTrue(row.contains("LinearLayout.LayoutParams(0, dp(48), 1f)"))
+        assertTrue(row.contains("setOnClickListener { editAlarm(entry) }"))
+    }
+    @Test fun permissionStatusRemainsEasyToTapWhenOnlyOneLine() {
+        val status = source.substringAfter("status = TextView(this).apply {")
+            .substringBefore("body.addView(status")
+        assertTrue(status.contains("minHeight = dp(48)"))
+        assertTrue(status.contains("setOnClickListener { openMissingSystemPermission() }"))
     }
     @Test fun alarmOptionsRemainSeparateFromScheduling() {
         assertTrue(source.contains("PopupMenu"))
@@ -69,6 +93,20 @@ class AlarmListUiContractTest {
         assertTrue(source.contains("menu.add(\"다음 1회 건너뛰기\")"))
         assertTrue(source.contains("menu.add(\"삭제\")"))
         assertFalse(source.contains("val controls = LinearLayout(this).apply { gravity = Gravity.END }"))
+    }
+    @Test fun missingPermissionsAreExplainedOnLaunchWithoutResumeSettingsLoop() {
+        val resume = source.substringAfter("override fun onResume()")
+        assertTrue(resume.contains("guideMissingPermissionsOnce()"))
+        val guide = source.substringAfter("private fun guideMissingPermissionsOnce()")
+            .substringBefore("private fun requestRuntimePermissions(")
+        assertTrue(guide.contains("nextPermissionToExplain(missing, promptedPermissions)"))
+        assertTrue(guide.contains("promptedPermissions.add(next)"))
+        assertTrue(guide.contains("missing.joinToString"))
+        assertTrue(guide.contains("나중에 눌러도 목록 아래 권한 상태에서 설정할 수 있습니다."))
+        assertTrue(guide.contains("설정으로 이동"))
+        assertTrue(guide.contains("나중에"))
+        assertTrue(source.contains("canUseFullScreenIntent()"))
+        assertTrue(source.contains("canScheduleExactAlarms()"))
     }
     @Test fun returningToListReconcilesEnabledAlarmsAfterPermissionRestore() {
         val resume = source.substringAfter("override fun onResume()")

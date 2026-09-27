@@ -52,7 +52,7 @@ jobs:
           BRUSH_ALARM_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           BRUSH_ALARM_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           BRUSH_ALARM_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon testDebugUnitTest lintRelease assembleRelease
+        run: ./gradlew --no-daemon testDebugUnitTest testReleaseUnitTest verifyNoNetworkPermissions lintDebug lintRelease assembleDebug assembleRelease
       - name: Prepare release assets
         shell: bash
         run: |

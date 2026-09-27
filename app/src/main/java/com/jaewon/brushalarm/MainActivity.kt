@@ -2,7 +2,7 @@ package com.jaewon.brushalarm
 
 import android.Manifest
 import android.app.AlarmManager
-import android.app.DatePickerDialog
+
 import android.app.NotificationManager
 import android.app.TimePickerDialog
 import android.content.Intent
@@ -17,7 +17,7 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
-import android.widget.FrameLayout
+
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.ScrollView
@@ -40,63 +40,64 @@ class MainActivity : AppCompatActivity() {
     private val days = listOf(DayOfWeek.SUNDAY, DayOfWeek.MONDAY, DayOfWeek.TUESDAY,
         DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY, DayOfWeek.SATURDAY)
     private val labels = listOf("일", "월", "화", "수", "목", "금", "토")
+    private val promptedPermissions = mutableSetOf<RequiredPermission>()
+    private var permissionPromptVisible = false
+    private var permissionRequestInProgress = false
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { refreshList() }
+    ) {
+        permissionRequestInProgress = false
+        refreshList()
+        guideMissingPermissionsOnce()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AlarmRingingService.createChannel(this)
         setContentView(buildContent())
-        requestRuntimePermissions()
         refreshList()
     }
 
     private fun buildContent(): View {
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(24), dp(20), dp(110))
+            setPadding(dp(16), dp(12), dp(16), dp(20))
             setBackgroundColor(Color.rgb(16, 17, 25))
         }
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         header.addView(TextView(this).apply {
-            text = "양치 알람"; textSize = 30f; setTextColor(ink)
+            text = "양치 알람"; textSize = 26f; setTextColor(ink)
         }, LinearLayout.LayoutParams(0, -2, 1f))
         header.addView(Button(this).apply {
             text = "+"; textSize = 25f; contentDescription = "알람 추가"
             setTextColor(ink); background = rounded(Color.rgb(45, 45, 57), 28)
-            setOnClickListener { showAddMenu(this) }
-        }, LinearLayout.LayoutParams(dp(64), dp(56)))
+            setOnClickListener { chooseTime(null) }
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
         header.addView(Button(this).apply {
             text = "⋮"; textSize = 26f; contentDescription = "알람 메뉴"
             setTextColor(ink); background = rounded(Color.rgb(45, 45, 57), 28)
             setOnClickListener { showOptions(this) }
-        }, LinearLayout.LayoutParams(dp(56), dp(56)))
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
         body.addView(header)
         body.addView(TextView(this).apply {
-            text = "울리기 전에는 언제든 켜거나 끌 수 있습니다. 울리면 30초 양치 후 종료됩니다."
-            textSize = 14f; setTextColor(muted); setPadding(0, dp(16), 0, dp(20))
+            text = "울리기 전 ON/OFF · 울리면 30초 양치 후 종료"
+            textSize = 13f; setTextColor(muted); setPadding(0, dp(6), 0, dp(10))
         })
         alarmList = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(Color.rgb(35, 35, 46), 28)
-            setPadding(dp(18), dp(6), dp(18), dp(6))
+            background = rounded(Color.rgb(35, 35, 46), 20)
+            setPadding(dp(12), dp(4), dp(12), dp(4))
         }
         body.addView(alarmList, matchWidth())
         status = TextView(this).apply {
-            textSize = 13f; setTextColor(muted); setPadding(0, dp(22), 0, 0)
+            textSize = 13f; setTextColor(muted); setPadding(0, dp(10), 0, 0)
+            minHeight = dp(48); gravity = Gravity.CENTER_VERTICAL
+            setOnClickListener { openMissingSystemPermission() }
         }
         body.addView(status, matchWidth())
-        return FrameLayout(this).apply {
+        return ScrollView(this).apply {
             setBackgroundColor(Color.rgb(16, 17, 25))
-            addView(ScrollView(this@MainActivity).apply { addView(body) }, FrameLayout.LayoutParams(-1, -1))
-            addView(TextView(this@MainActivity).apply {
-                text = "◉  알람"; textSize = 17f; gravity = Gravity.CENTER
-                setTextColor(ink); background = rounded(Color.rgb(48, 47, 63), 30)
-                contentDescription = "알람 목록"
-            }, FrameLayout.LayoutParams(dp(142), dp(54), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-                bottomMargin = dp(20)
-            })
+            addView(body)
         }
     }
 
@@ -114,31 +115,26 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams(-1, dp(1)))
             alarmList.addView(alarmRow(entry), matchWidth())
         }
-        val exact = getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
-        val fullScreen = Build.VERSION.SDK_INT < 34 ||
-            getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
+        val missing = missingRequiredPermissions()
         status.text = buildString {
             message?.let { append(it).append("\n") }
-            append(if (hasCameraPermission()) "카메라 ✓" else "카메라 ✗")
-            append(" · ")
-            append(if (exact) "정확한 알람 ✓" else "정확한 알람 ✗")
-            append(" · ")
-            append(if (fullScreen) "전체 화면 ✓" else "전체 화면 ✗")
+            append(if (missing.isEmpty()) "필수 권한 준비됨 ✓" else "필수 권한 ${missing.size}개 필요 · 눌러서 설정")
         }
     }
 
     private fun alarmRow(entry: AlarmEntry): View {
         val row = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(5), dp(18), dp(5), dp(12))
+            orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(8), dp(4), dp(6))
         }
         val upper = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         upper.addView(TextView(this).apply {
             text = if (entry.hour < 12) "오전" else "오후"; textSize = 15f
-            setTextColor(if (entry.enabled) ink else muted); setPadding(0, dp(13), dp(8), 0)
+            setTextColor(if (entry.enabled) ink else muted); setPadding(0, dp(8), dp(8), 0)
         })
         upper.addView(TextView(this).apply {
             val hour = (entry.hour % 12).let { if (it == 0) 12 else it }
-            text = "%d:%02d".format(hour, entry.minute); textSize = 44f
+            text = "%d:%02d".format(hour, entry.minute); textSize = 38f
+            minHeight = dp(48); gravity = Gravity.CENTER_VERTICAL
             setTextColor(if (entry.enabled) ink else muted)
             contentDescription = "${text} 알람 편집"
             setOnClickListener { editAlarm(entry) }
@@ -152,31 +148,36 @@ class MainActivity : AppCompatActivity() {
             setOnCheckedChangeListener { _, checked -> toggleAlarm(entry, checked) }
         })
         row.addView(upper, matchWidth())
+        val lower = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         entry.date?.let { date ->
-            row.addView(TextView(this).apply {
-                text = "${date.monthValue}월 ${date.dayOfMonth}일 (${labels[days.indexOf(date.dayOfWeek)]}) · 1회성"
-                textSize = 16f; setTextColor(if (entry.enabled) ink else muted)
-                setPadding(dp(44), 0, 0, dp(8)); setOnClickListener { editAlarm(entry) }
-            })
-        } ?: run { row.addView(weekdayStrip(entry), matchWidth()) }
-        row.addView(Button(this).apply {
+            lower.addView(TextView(this).apply {
+                text = if (date == LocalDate.now()) "오늘 · 1회" else
+                    "${date.monthValue}월 ${date.dayOfMonth}일 (${labels[days.indexOf(date.dayOfWeek)]}) · 1회"
+                textSize = 14f; setTextColor(if (entry.enabled) ink else muted)
+                minHeight = dp(48); gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(42), 0, 0, 0); setOnClickListener { editAlarm(entry) }
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        } ?: run { lower.addView(weekdayStrip(entry), LinearLayout.LayoutParams(0, -2, 1f)) }
+        lower.addView(Button(this).apply {
             text = "⋮"; textSize = 21f; contentDescription = "알람 작업 메뉴"
             setOnClickListener { showRowActions(this, entry) }
-        }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { gravity = Gravity.END })
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        row.addView(lower, matchWidth())
         return row
     }
 
     private fun weekdayStrip(entry: AlarmEntry): View = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL; setPadding(dp(44), 0, 0, dp(6))
+        orientation = LinearLayout.HORIZONTAL; setPadding(dp(42), 0, 0, 0)
+        contentDescription = "반복 요일 ${entry.weekdays.joinToString { labels[days.indexOf(it)] }} 알람 편집"
+        setOnClickListener { editAlarm(entry) }
         days.forEachIndexed { index, day ->
             val selected = day in entry.weekdays
             addView(TextView(this@MainActivity).apply {
-                text = (if (selected) "•\n" else " \n") + labels[index]
+                text = labels[index]
                 textSize = 14f; gravity = Gravity.CENTER
                 setTextColor(if (selected && entry.enabled) violet else muted)
                 contentDescription = "${labels[index]}요일 ${if (selected) "반복" else "미선택"}"
-                setOnClickListener { editAlarm(entry) }
-            }, LinearLayout.LayoutParams(0, dp(44), 1f))
+            }, LinearLayout.LayoutParams(0, dp(48), 1f))
         }
     }
 
@@ -191,13 +192,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showAddMenu(anchor: View) {
-        PopupMenu(this, anchor).apply {
-            menu.add("반복 알람 추가").setOnMenuItemClickListener { chooseTime(null, false); true }
-            menu.add("주말 1회성 알람 추가").setOnMenuItemClickListener { chooseTime(null, true); true }
-            show()
-        }
-    }
 
     private fun showOptions(anchor: View) {
         PopupMenu(this, anchor).apply {
@@ -208,43 +202,33 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun editAlarm(entry: AlarmEntry) = chooseTime(entry, entry.date != null)
+    private fun editAlarm(entry: AlarmEntry) = chooseTime(entry)
 
-    private fun chooseTime(entry: AlarmEntry?, oneOff: Boolean) {
+    private fun chooseTime(entry: AlarmEntry?) {
         val now = ZonedDateTime.now()
         TimePickerDialog(this, { _, hour, minute ->
-            if (oneOff) chooseWeekend(entry, hour, minute) else chooseWeekdays(entry, hour, minute)
+            chooseWeekdays(entry, hour, minute)
         }, entry?.hour ?: now.hour, entry?.minute ?: now.minute, true).show()
     }
 
     private fun chooseWeekdays(entry: AlarmEntry?, hour: Int, minute: Int) {
         val selected = BooleanArray(days.size) { index ->
-            if (entry == null) days[index] in DayOfWeek.MONDAY..DayOfWeek.FRIDAY
-            else days[index] in entry.weekdays
+            entry != null && days[index] in entry.weekdays
         }
-        AlertDialog.Builder(this).setTitle("반복 요일 선택")
+        AlertDialog.Builder(this).setTitle("요일 반복 · 미선택 시 오늘 한 번")
+            .setMessage(if (entry?.date?.isAfter(LocalDate.now()) == true)
+                "기존 날짜 지정 알람은 반복 요일을 선택하지 않으면 날짜가 유지됩니다." else
+                "요일을 선택하지 않으면 오늘 선택한 시각에 한 번만 울립니다. 지난 시각은 예약할 수 없습니다.")
             .setMultiChoiceItems(labels.toTypedArray(), selected) { _, index, checked -> selected[index] = checked }
             .setNegativeButton("취소", null).setPositiveButton("저장") { _, _ ->
                 val weekdays = days.filterIndexed { index, _ -> selected[index] }.toSet()
-                if (weekdays.isEmpty()) refreshList("요일을 하나 이상 선택하세요.")
-                else saveAlarm(entry, hour, minute, weekdays, null)
+                if (weekdays.isEmpty()) {
+                    val date = entry?.date?.takeIf { it.isAfter(LocalDate.now()) }
+                        ?: oneOffDateForToday(System.currentTimeMillis(), hour, minute)
+                    if (date == null) refreshList("오늘 남은 시각을 선택하세요. 내일로 자동 이월하지 않습니다.")
+                    else saveAlarm(entry, hour, minute, weekdays, date)
+                } else saveAlarm(entry, hour, minute, weekdays, null)
             }.show()
-    }
-
-    private fun chooseWeekend(entry: AlarmEntry?, hour: Int, minute: Int) {
-        val now = ZonedDateTime.now()
-        val default = entry?.date?.takeIf { !it.isBefore(now.toLocalDate()) }
-            ?: nextWeekendDate(now, hour, minute)
-        DatePickerDialog(this, { _, year, month, day ->
-            val date = LocalDate.of(year, month + 1, day)
-            if (date.dayOfWeek !in setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)) {
-                refreshList("토요일 또는 일요일 날짜를 선택하세요.")
-            } else if (!date.atTime(hour, minute).atZone(now.zone).isAfter(ZonedDateTime.now())) {
-                refreshList("미래 시각을 선택하세요.")
-            } else saveAlarm(entry, hour, minute, emptySet(), date)
-        }, default.year, default.monthValue - 1, default.dayOfMonth).apply {
-            datePicker.minDate = now.toLocalDate().atStartOfDay(now.zone).toInstant().toEpochMilli()
-        }.show()
     }
 
     private fun saveAlarm(entry: AlarmEntry?, hour: Int, minute: Int,
@@ -282,7 +266,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (nextTriggerMillis(entry.copy(enabled = true), System.currentTimeMillis()) == null) {
-            refreshList("지난 1회성 알람입니다. 날짜를 편집해 다시 켜세요.")
+            refreshList("지난 1회성 알람입니다. 새 알람을 추가하세요.")
             return
         }
         if (!canEnableAlarm()) { refreshList("권한을 허용한 뒤 다시 켜세요."); return }
@@ -307,11 +291,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun canEnableAlarm(): Boolean {
-        if (!hasCameraPermission()) {
-            requestRuntimePermissions(); refreshList("카메라 권한이 필요합니다."); return false
-        }
-        if (!getSystemService(AlarmManager::class.java).canScheduleExactAlarms()) {
-            openExactAlarmSettings(); refreshList("정확한 알람 권한이 필요합니다."); return false
+        if (missingRequiredPermissions().isNotEmpty()) {
+            guideMissingPermissionsOnce()
+            refreshList("알람을 켜려면 필수 권한을 허용하세요.")
+            return false
         }
         return true
     }
@@ -328,24 +311,91 @@ class MainActivity : AppCompatActivity() {
         startActivity(Intent(this, PreviewActivity::class.java))
     }
 
+    private fun missingRequiredPermissions(): Set<RequiredPermission> = buildSet {
+        if (!hasCameraPermission()) add(RequiredPermission.CAMERA)
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
+                this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) add(RequiredPermission.NOTIFICATIONS)
+        if (!getSystemService(AlarmManager::class.java).canScheduleExactAlarms())
+            add(RequiredPermission.EXACT_ALARM)
+        if (Build.VERSION.SDK_INT >= 34 &&
+            !getSystemService(NotificationManager::class.java).canUseFullScreenIntent())
+            add(RequiredPermission.FULL_SCREEN)
+    }
+
+    private fun guideMissingPermissionsOnce() {
+        if (permissionPromptVisible || permissionRequestInProgress || !::alarmList.isInitialized) return
+        val missing = missingRequiredPermissions()
+        val next = nextPermissionToExplain(missing, promptedPermissions) ?: return
+        promptedPermissions.add(next)
+        permissionPromptVisible = true
+        val missingNames = missing.joinToString(" · ") {
+            when (it) {
+                RequiredPermission.CAMERA -> "카메라"
+                RequiredPermission.NOTIFICATIONS -> "알림"
+                RequiredPermission.EXACT_ALARM -> "정확한 알람"
+                RequiredPermission.FULL_SCREEN -> "전체 화면"
+            }
+        }
+        val (title, message) = when (next) {
+            RequiredPermission.CAMERA -> "카메라 권한" to "양치 완료를 확인할 때 카메라가 필요합니다."
+            RequiredPermission.NOTIFICATIONS -> "알림 권한" to "알람이 울릴 때 알림을 표시하려면 허용해 주세요."
+            RequiredPermission.EXACT_ALARM -> "정확한 알람 권한" to "설정에서 정확한 알람을 허용해야 선택한 시각에 예약할 수 있습니다."
+            RequiredPermission.FULL_SCREEN -> "전체 화면 알림 권한" to "잠금 화면 위에 알람 화면을 표시하려면 허용해 주세요."
+        }
+        AlertDialog.Builder(this).setTitle(title).setMessage(
+            "$message\n\n아직 필요한 권한: $missingNames\n나중에 눌러도 목록 아래 권한 상태에서 설정할 수 있습니다.")
+            .setNegativeButton("나중에") { _, _ -> permissionPromptVisible = false }
+            .setPositiveButton(if (next == RequiredPermission.CAMERA || next == RequiredPermission.NOTIFICATIONS)
+                "권한 허용" else "설정으로 이동") { _, _ ->
+                permissionPromptVisible = false
+                when (next) {
+                    RequiredPermission.CAMERA -> requestRuntimePermission(Manifest.permission.CAMERA)
+                    RequiredPermission.NOTIFICATIONS -> requestRuntimePermission(Manifest.permission.POST_NOTIFICATIONS)
+                    RequiredPermission.EXACT_ALARM -> openExactAlarmSettings()
+                    RequiredPermission.FULL_SCREEN -> openFullScreenSettings()
+                }
+            }
+            .setOnDismissListener { permissionPromptVisible = false }
+            .show()
+    }
+
+    private fun requestRuntimePermission(permission: String) {
+        permissionRequestInProgress = true
+        permissionLauncher.launch(arrayOf(permission))
+    }
+
     private fun requestRuntimePermissions() {
         val permissions = mutableListOf(Manifest.permission.CAMERA)
         if (Build.VERSION.SDK_INT >= 33) permissions += Manifest.permission.POST_NOTIFICATIONS
         val missing = permissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
-        if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray())
+        if (missing.isNotEmpty()) {
+            permissionRequestInProgress = true
+            permissionLauncher.launch(missing.toTypedArray())
+        }
     }
 
     private fun openMissingSystemPermission() {
+        if (!hasCameraPermission()) {
+            requestRuntimePermission(Manifest.permission.CAMERA); return
+        }
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
+                this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestRuntimePermission(Manifest.permission.POST_NOTIFICATIONS); return
+        }
         if (!getSystemService(AlarmManager::class.java).canScheduleExactAlarms()) {
             openExactAlarmSettings(); return
         }
         if (Build.VERSION.SDK_INT >= 34 && !getSystemService(NotificationManager::class.java).canUseFullScreenIntent()) {
-            startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName")))
-            return
+            openFullScreenSettings(); return
         }
-        requestRuntimePermissions(); refreshList()
+        refreshList("필수 권한이 모두 허용되었습니다.")
+    }
+
+    private fun openFullScreenSettings() {
+        startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName")))
     }
 
     private fun openExactAlarmSettings() {
@@ -367,6 +417,7 @@ class MainActivity : AppCompatActivity() {
         if (::alarmList.isInitialized) {
             MultiAlarmScheduler.rescheduleAll(this)
             refreshList()
+            guideMissingPermissionsOnce()
         }
     }
 }
